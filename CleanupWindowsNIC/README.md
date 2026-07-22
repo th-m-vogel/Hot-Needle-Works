@@ -4,15 +4,53 @@ Restores static IP configuration on Windows VMs after a virtual hardware upgrade
 
 ## The Problem
 
-When a cloud VM's underlying virtual hardware changes — chipset upgrade, hypervisor migration, machine type switch (e.g. i440fx → q35), or platform migration (e.g. VMware → KVM) — Windows treats the NICs as entirely new devices. It assigns them new connection names ("Ethernet 3", "Ethernet 4", ...) and leaves the originals as hidden ghost adapters.
+### How Windows handles PnP devices
 
-The ghosts still hold the old static IP configuration. If you try to apply that IP to the new adapter, Windows blocks it:
+Windows keeps a detailed and persistent record of every hardware device it has ever detected.
+When a present device differs from a previously known device — even slightly — Windows treats
+it as a different device entirely. The old device record is retained indefinitely (it may come
+back). The new device is initialised with default settings.
+
+This is correct and intentional behaviour for a Plug-and-Play system with dynamic device
+handling. It works exactly the same way on physical on-premises hardware: replace a network
+card in a Windows server and Windows will enumerate a fresh adapter alongside the ghost of
+the old one.
+
+### When virtual hardware changes
+
+Whenever the virtual hardware visible to a Windows guest changes — chipset upgrade,
+machine type switch (e.g. i440fx → q35), hypervisor migration (e.g. VMware → KVM), or
+any change to the PCI bus topology or ACPI device paths — Windows detects the virtual NICs
+as new devices and re-enumerates them with default configuration.
+
+### What you actually see
+
+**Scenario A — DHCP (automatically assigned IP address)**
+
+Impact is minimal. A new adapter appears (e.g. *Ethernet 2* instead of *Ethernet*) with the
+same MAC address. It requests an IP via DHCP and comes up on its own. The ghost adapter is
+left in the device list as a hidden device.
+
+No manual intervention required.
+
+**Scenario B — Static IP (manually assigned IP address)**
+
+This is the critical case. After the hardware change:
+
+- The original adapter (*Ethernet*) vanishes from the active adapter list
+- A new adapter (*Ethernet 2*, or similar) appears, configured for DHCP by default
+- The VM loses network connectivity until the static IP is restored on the new adapter
+
+If you access the VM via console and try to manually re-apply the old static IP to the new
+adapter, Windows blocks it:
 
 > *"This IP address is already assigned to another adapter which is no longer present."*
 
-The VM loses network connectivity until the ghost adapters are cleaned up and the static config is transferred.
+The ghost of the old adapter still holds the static configuration and Windows considers
+the address already in use. The ghost must be explicitly removed before the IP can be
+re-assigned.
 
-DHCP-configured VMs recover on their own (they just request a new lease on the new adapter). Static IP VMs don't.
+DHCP-configured VMs recover on their own. Static IP VMs don't — this script is for them.
 
 ## What This Script Does
 
@@ -29,10 +67,7 @@ DHCP-configured VMs recover on their own (they just request a new lease on the n
 
 - Windows PowerShell (elevated / Administrator)
 - VirtIO (KVM/QEMU) network adapters (`netkvm` driver) — the script targets `netkvm` specifically
-- [`devcon.exe`](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/devcon) in PATH for ghost device removal  
-  *Alternative (no external dependency):* `pnputil.exe /remove-device` (built-in since Windows 8) or `Remove-PnpDevice` (PowerShell PnpDevice module)
-
-> **Note:** If `devcon` is not available, the script will copy static IP configuration successfully but will fail to remove the ghost adapters. The VM will be reachable, but ghost cleanup will require a manual step or a rerun after installing `devcon`.
+- No external tools required — ghost device removal uses `Remove-PnpDevice` (built-in PowerShell cmdlet, available since Windows 8 / Server 2012)
 
 ## Usage
 
@@ -79,8 +114,6 @@ Unregister-ScheduledTask -TaskName "RestoreNet-RunOnce" -Confirm:$false
 - **Windows Firewall network profiles** — a newly enumerated NIC may default to the Public firewall profile, which can block RDP even when IP connectivity is restored; verify or reset the profile manually if needed
 
 ## Known Limitations
-
-Running the script without `devcon` (or `pnputil`) available leaves ghost adapters in place. Network connectivity will be restored, but the ghost cleanup step will not complete. A second run after placing `devcon` in PATH will finish the cleanup.
 
 The script does not implement a dry-run or `-WhatIf` mode. Review the output carefully before relying on it in production.
 
