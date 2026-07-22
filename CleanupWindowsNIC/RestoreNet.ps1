@@ -113,21 +113,21 @@ try {
 
         $OldTcpIpPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($OldNic.IfUUID)"
         if (-not (Test-Path $OldTcpIpPath)) {
-            Write-Host "  No TCP/IP config found for old NIC — cleanup only"
+            Write-Host "  No TCP/IP config found for old NIC - cleanup only"
             Remove-GhostNic -InstanceId $OldNic.Instance -IfUUID $OldNic.IfUUID
             continue
         }
         $OldTcpIp = Get-ItemProperty -Path $OldTcpIpPath
 
-        # EnableDHCP: 0 = static, 1 = DHCP, $null = unconfigured (treat same as DHCP — cleanup only)
+        # EnableDHCP: 0 = static, 1 = DHCP, $null = unconfigured (treat same as DHCP - cleanup only)
         $isStatic = ($null -ne $OldTcpIp.EnableDHCP) -and ([int]$OldTcpIp.EnableDHCP -eq 0)
 
         if (-not $isStatic) {
-            Write-Host "Old NIC from Slot $($OldNic.Slot) was DHCP or unconfigured — cleanup only"
+            Write-Host "Old NIC from Slot $($OldNic.Slot) was DHCP or unconfigured - cleanup only"
             Remove-GhostNic -InstanceId $OldNic.Instance -IfUUID $OldNic.IfUUID
 
         } else {
-            Write-Host "Old NIC from Slot $($OldNic.Slot) was STATIC — transferring config"
+            Write-Host "Old NIC from Slot $($OldNic.Slot) was STATIC - transferring config"
             $NewIfPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($NewNic.IfUUID)"
 
             # REG_MULTI_SZ properties (arrays of strings)
