@@ -111,7 +111,13 @@ try {
             continue
         }
 
-        $OldTcpIp = Get-ItemProperty -Path "HKLM:SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($OldNic.IfUUID)"
+        $OldTcpIpPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($OldNic.IfUUID)"
+        if (-not (Test-Path $OldTcpIpPath)) {
+            Write-Host "  No TCP/IP config found for old NIC — cleanup only"
+            Remove-GhostNic -InstanceId $OldNic.Instance -IfUUID $OldNic.IfUUID
+            continue
+        }
+        $OldTcpIp = Get-ItemProperty -Path $OldTcpIpPath
 
         # EnableDHCP: 0 = static, 1 = DHCP, $null = unconfigured (treat same as DHCP — cleanup only)
         $isStatic = ($null -ne $OldTcpIp.EnableDHCP) -and ([int]$OldTcpIp.EnableDHCP -eq 0)
@@ -134,9 +140,8 @@ try {
                 Write-Host "  $Property = $($OldTcpIp.$Property)"
                 Set-ItemProperty -Path $NewIfPath -Name $Property -Value $OldTcpIp.$Property -Type String
             }
-            # REG_DWORD: mark as static
-            Set-ItemProperty -Path $NewIfPath -Name EnableDHCP   -Value 0            -Type DWord
-            Set-ItemProperty -Path $NewIfPath -Name DhcpIPAddress -Value 255.255.255.255 -Type String
+            # REG_DWORD: mark as static (Windows manages DhcpIPAddress itself)
+            Set-ItemProperty -Path $NewIfPath -Name EnableDHCP -Value 0 -Type DWord
 
             Remove-GhostNic -InstanceId $OldNic.Instance -IfUUID $OldNic.IfUUID
 
